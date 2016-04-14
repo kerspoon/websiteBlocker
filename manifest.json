@@ -1,0 +1,17 @@
+{
+  "name": "URL Redirect",
+  "version": "0.2",
+  "description": "Checks URL and redirects as required.",
+  "background": {
+     "page":"bg.html"
+     },
+   "manifest_version": 2,
+   "content_scripts": [
+   {
+     "matches": ["http://*/*", "https://*/*"],
+     "js": ["content.js"],
+     "run_at": "document_start"
+   }
+   ],
+  "permissions": ["tabs"]
+}
