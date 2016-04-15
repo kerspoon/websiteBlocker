@@ -13,5 +13,9 @@
      "run_at": "document_start"
    }
    ],
-  "permissions": ["tabs"]
+  "permissions": ["tabs", "storage"],
+  "options_ui": {
+    "page": "options.html",
+    "chrome_style": true
+  }
 }

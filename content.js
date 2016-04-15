@@ -7,23 +7,11 @@
   //   elem ::= all, weekday, weekend, worknight, monday, ..., sunday
   // 'to-url' defaults to "about:blank" if missing
 
-  var checkFrequency = 5*60; // every 5 mins
+  var defaultCheckFrequency = 5; // every 5 mins
 
-  var patterns = [
-    ["weekday", "09:00", "12:59", /facebook\.com/],
-    ["all", "00:00", "24:00", /facebook\.com\/?$/, "https://facebook.com/messages/"],
-
-  ];
-
-  var basicPatterns = [
-    /dailymail\.co/,
-    /express\.co/
-  ];
 
   // ========================================================================== //
   // ========================================================================== //
-
-  console.log('window.location.href', window.location.href);
 
   function redirect(to) {
     to = to ? to : 'about:blank';
@@ -105,7 +93,8 @@
   // ========================================================================== //
   // ========================================================================== //
 
-  function checkAndRedirect() {
+  function checkAndRedirect(basicPatterns, patterns) {
+
     for (var i = 0; i < basicPatterns.length; i++) {
       if (basicPatterns[i].test(window.location.href)) {
         redirect();
@@ -128,11 +117,64 @@
     }
   }
 
-  function checkRegularly(frequency) {
-    checkAndRedirect();
-    setTimeout(checkRegularly, frequency*1000);
+  var checkFrequency, basicPatterns, fullPatterns;
+
+  function checkRegularly() {
+    checkAndRedirect(basicPatterns, fullPatterns);
+    setTimeout(checkRegularly, checkFrequency*60*1000);
   }
 
-  checkRegularly(checkFrequency);
+  // ========================================================================== //
+  // ========================================================================== //
+
+  function parseSettings(items) {
+
+    var basicPatterns = [];
+    var basicLines = items.basicPatterns.split("\n");
+    for (var i = 0; i < basicLines.length; i++) {
+      var line = basicLines[i].trim();
+      if (line) {
+        basicPatterns.push(new RegExp(line));
+      }
+    }
+
+    var fullPatterns = [];
+    var fullLines = items.fullPatterns.split("\n");
+    for (var i = 0; i < fullLines.length; i++) {
+      // worknight 23:20 24:00 reddit\\.com
+      var lineParts = fullLines[i].trim().split(" ");
+      if (lineParts.length > 3) {
+        lineParts[3] = new RegExp(lineParts[3]);
+        fullPatterns.push(lineParts);
+      }
+    }
+
+    return {
+      basicPatterns: basicPatterns,
+      fullPatterns: fullPatterns,
+      checkFrequency: parseFloat(items.checkFrequency)
+    };
+  }
+
+  chrome.storage.sync.get({
+    basicPatterns: '',
+    fullPatterns: '',
+    checkFrequency: defaultCheckFrequency
+  }, function(items) {
+    /*
+    console.log('basic', items.basicPatterns);
+    console.log('full', items.fullPatterns);
+    console.log('checkFrequency', items.checkFrequency);
+    console.log('window.location.href', window.location.href);
+    */
+
+    var settings = parseSettings(items);
+
+    checkFrequency = settings.checkFrequency;
+    basicPatterns = settings.basicPatterns;
+    fullPatterns = settings.fullPatterns;
+
+    checkRegularly();
+  });
 
 }());

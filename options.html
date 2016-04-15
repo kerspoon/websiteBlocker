@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>URL Redirect</title>
+  <style>
+    body: { padding: 10px; }
+  </style>
+</head>
+
+<body>
+
+  <h1>Setting for Website Redirect</h1>
+
+  <p>
+    This extension either redirects or blocks a page as soon as it opens based
+    upon the day and time. It also checks every X mins to deal with pages you
+    keep open.
+  </p>
+
+  <h2>Basic Patterns</h2>
+
+  <p>
+    This is the list of url regular expressions that you want to block at all
+    times. It is identical to using the "full patterns" with <code>all 00:00 24:00</code>
+    at the start. There is one definition per line.
+  </p>
+
+  <p>
+    for example: <code>dailymail\.co</code> will block any dailymail url (including
+    "co.uk" and ".com"). <code>facebook\.com\/?$</code> will block facebook but not any
+    sub pages (e.g facebook.com/messages).
+  </p>
+
+  <textarea wrap='off' name="basicPatterns" rows="8" cols="70" id="basicPatterns" style="
+    font-family: monospace;
+    font-size: large;
+">
+  </textarea>
+
+  <h2>Full Patterns</h2>
+
+  <p>
+    Here you can specify the days and time range where you want to block or
+    redirect pages that match the regex. It is made of <code>days fromTime
+    toTime fromUrl toUrl</code>. The toUrl is optional.
+  </p>
+
+  <ul>
+    <li>
+      <strong>days</strong>: a comma separated list <i>without spaces</i> of
+      lowercase day names (e.g. monday), or any of <code>all</code>, <code>
+      weekend</code>, <code>weekday</code>, <code>worknight</code>.
+    </li>
+    <li>
+      <strong>time</strong>: specifed as <code>hh:mm</code>. Note that if the min
+      is earlier than the max it will error - to block pages at night time you
+      will need two entries, one covering up to <code>24:00</code> and another
+      from <code>00:00</code>.
+    </li>
+    <li>
+      <strong>fromUrl</strong>: a regular expression specifing the pages to
+      match.
+    </li>
+    <li>
+      <strong>toUrl</strong>: a plain string, the url that you want to end up on,
+      if you leave this out it will default to a blank page.
+    </li>
+  </ul>
+
+  <p>
+    For example, "<code>mon,tue,wed 13:00 24:00 facebook\.com</code>" will block
+    facebook in the afternoons at the start of the week.
+    "<code>all 00:00 24:00 facebook\.com\/?$ https://facebook.com/messages/</code>"
+    will always redirect the facebook homepage to the messages page.
+  </p>
+
+  <textarea wrap='off' name="fullPatterns" rows="8" cols="70" id="fullPatterns" style="
+    font-family: monospace;
+    font-size: large;
+">
+  </textarea>
+
+  <h2>Check Frequency</h2>
+
+  <div>How often to check for blocked or redirected pages in mins.</div>
+
+  <input type="text" name="frequency" value="5" id="frequency">
+
+
+  <div id="status">&nbsp;</div>
+  <button id="save">Save</button>
+
+  <script src="options.js"></script>
+</body>
+</html>
