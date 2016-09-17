@@ -1,6 +1,6 @@
 {
   "name": "URL Redirect",
-  "version": "0.2",
+  "version": "0.4",
   "description": "Checks URL and redirects as required.",
   "background": {
      "page":"bg.html"

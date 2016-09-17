@@ -9,17 +9,35 @@
 
   var defaultCheckFrequency = 5; // every 5 mins
 
+  var checkFrequency, basicPatterns, fullPatterns, timeoutPatterns;
 
   // ========================================================================== //
+  // Redirect (by calling `bg.js`)
   // ========================================================================== //
 
   function redirect(to) {
     to = to ? to : 'about:blank';
-    console.log('redirect', window.location.href, to);
+    // console.log('redirect', window.location.href, to);
     chrome.extension.sendRequest({
       redirect: to
     }); // send message to redirect
   }
+
+  // ========================================================================== //
+  // Util
+  // ========================================================================== //
+
+  function callWhenPageReady(callback) {
+    if (document.readyState === "complete") {
+      setTimeout(callback, 0);
+    } else {
+      document.addEventListener("DOMContentLoaded", callback);
+    }
+  }
+
+  // ========================================================================== //
+  // Date & Time
+  // ========================================================================== //
 
   function getDayName(day) {
     var days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -91,40 +109,7 @@
   }
 
   // ========================================================================== //
-  // ========================================================================== //
-
-  function checkAndRedirect(basicPatterns, patterns) {
-
-    for (var i = 0; i < basicPatterns.length; i++) {
-      if (basicPatterns[i].test(window.location.href)) {
-        redirect();
-        break;
-      }
-    }
-
-    for (var i = 0; i < patterns.length; i++) {
-      var day = patterns[i][0];
-      var fromTime = patterns[i][1];
-      var toTime = patterns[i][2];
-      var urlRegex = patterns[i][3];
-      var redirectLocation = patterns[i][4];
-      var href = window.location.href;
-
-      if (dayMatches(day) && timeInRange(fromTime, toTime) && urlRegex.test(href)) {
-        redirect(redirectLocation);
-        break;
-      }
-    }
-  }
-
-  var checkFrequency, basicPatterns, fullPatterns;
-
-  function checkRegularly() {
-    checkAndRedirect(basicPatterns, fullPatterns);
-    setTimeout(checkRegularly, checkFrequency*60*1000);
-  }
-
-  // ========================================================================== //
+  // Save & Load
   // ========================================================================== //
 
   function parseSettings(items) {
@@ -149,32 +134,221 @@
       }
     }
 
+    var timeoutPatterns = [];
+    var timeoutLines = items.timeoutPatterns.split("\n");
+    for (var i = 0; i < timeoutLines.length; i++) {
+      // reddit.com 20 40 1474065141460
+      var lineParts = timeoutLines[i].trim().split(" ");
+      timeoutPatterns.push([
+        new RegExp(lineParts[0]),
+        parseFloat(lineParts[1]),
+        parseFloat(lineParts[2]),
+        parseInt(lineParts[3], 0)
+      ]);
+    }
+
     return {
       basicPatterns: basicPatterns,
       fullPatterns: fullPatterns,
+      timeoutPatterns: timeoutPatterns,
       checkFrequency: parseFloat(items.checkFrequency)
     };
   }
 
-  chrome.storage.sync.get({
-    basicPatterns: '',
-    fullPatterns: '',
-    checkFrequency: defaultCheckFrequency
-  }, function(items) {
-    /*
-    console.log('basic', items.basicPatterns);
-    console.log('full', items.fullPatterns);
-    console.log('checkFrequency', items.checkFrequency);
-    console.log('window.location.href', window.location.href);
-    */
+  function unparseSettings(basicPatterns, fullPatterns, timeoutPatterns, checkFrequency) {
+    // turn all these into strings first (unparse!)
+    return {
+      basicPatterns: basicPatterns.map(function(obj) {
+        return obj.toString().slice(1,-1)
+      }).join("\n"),
+      fullPatterns: fullPatterns.map(function(obj) {
+        obj[3] = obj[3].toString().slice(1,-1);
+        return obj.join(" ");
+      }).join("\n"),
+      timeoutPatterns: timeoutPatterns.map(function(obj) {
+        obj[0] = obj[0].toString().slice(1,-1);
+        return obj.join(" ");
+      }).join("\n"),
+      frequency: "" + checkFrequency
+    }
+  }
 
-    var settings = parseSettings(items);
+  function saveOptions(callback) {
+    var optionsStr = unparseSettings(basicPatterns, fullPatterns, timeoutPatterns, checkFrequency);
+    chrome.storage.sync.set(optionsStr, callback);
+  }
 
-    checkFrequency = settings.checkFrequency;
-    basicPatterns = settings.basicPatterns;
-    fullPatterns = settings.fullPatterns;
+  function loadOptions(callback) {
+    chrome.storage.sync.get({
+      basicPatterns: '',
+      fullPatterns: '',
+      timeoutPatterns: '',
+      checkFrequency: defaultCheckFrequency
+    }, function(items) {
+      var settings = parseSettings(items);
 
-    checkRegularly();
-  });
+      checkFrequency = settings.checkFrequency;
+      basicPatterns = settings.basicPatterns;
+      timeoutPatterns = settings.timeoutPatterns;
+      fullPatterns = settings.fullPatterns;
+
+      callback();
+    });
+  }
+
+  // ========================================================================== //
+  // Timeout blocker
+  // ========================================================================== //
+
+  function removePageBlocker() {
+    var div = document.getElementById('PLUGIN-URL-REDIRECT');
+    if (div) div.remove();
+  }
+
+  function unblockPage() {
+    // console.log('unblock button pressed');
+
+    // update the setting to set the unblock/block time
+    for (var i = 0; i < timeoutPatterns.length; i++) {
+      if (timeoutPatterns[i][0].test(window.location.href)) {
+        timeoutPatterns[i][3] = (new Date()).getTime() + 1000*60*timeoutPatterns[i][1];
+      }
+    }
+
+    // kill the page blocker
+    removePageBlocker();
+
+    // save the new kill time so that it gets remembered if we close the page
+    saveOptions();
+  }
+
+  function createPageOverlay(accessTime, blockTime, unblockEnd) {
+
+    // console.log('create overlay');
+
+    var div = document.getElementById('PLUGIN-URL-REDIRECT');
+
+    if (!div) {
+
+      // console.log('make the div');
+
+      div = document.createElement("div");
+      div.id = "PLUGIN-URL-REDIRECT";
+      div.style.zIndex = 10000;
+      div.style.position = 'fixed';
+      div.style.backgroundColor = "grey";
+      div.style.height = "100%";
+      div.style.width = "100%";
+      div.style.top = 0;
+      div.style.left = 0;
+      div.style["text-align"] = "center";
+
+      var lockedUntil = new Date(unblockEnd.getTime() + blockTime*1000*60);
+      var now = new Date();
+
+      // console.log('in cooldown period?', now < lockedUntil);
+      // console.log(now.getTime(), lockedUntil.getTime());
+
+      if (now < lockedUntil) {
+        var child = document.createElement("h1");
+        child.innerText = "Blocked until " + lockedUntil;
+        div.appendChild(child);
+      } else {
+        var child = document.createElement("button");
+        child.style.width = "100px";
+        child.style.height = "50px";
+        child.style.position = 'absolute';
+        div.style.backgroundColor = "lightred";
+        child.style.top = "50%"
+        child.innerText = "Unblock";
+        child.onclick = unblockPage;
+        div.appendChild(child);
+      }
+
+      var msg = document.createElement("h2");
+      msg.innerText = "Blocked settings. Access: " + accessTime + ". Cooldown: " + blockTime;
+      div.appendChild(msg);
+
+      document.body.appendChild(div);
+    }
+    return div;
+  }
+
+  function activateTimeoutBlocker(accessTime, blockTime, unblockEnd) {
+
+    var now = new Date();
+
+    // console.log('in open-access period?', unblockEnd && now < unblockEnd);
+    // console.log(now.getTime(), unblockEnd.getTime());
+
+    if (unblockEnd && now < unblockEnd) {
+      // we have previously clicked the unblock button
+      // and the timer set by that button has not expired
+      // hence we should just let them view the page
+      return;
+    } else {
+      // show a full page overlay with a button to unblock
+      // but we have to wait for the page to load first
+      callWhenPageReady(function() {
+        createPageOverlay(accessTime, blockTime, unblockEnd);
+      });
+    }
+  }
+
+  // ========================================================================== //
+  // Test if the current page needs blocking
+  // ========================================================================== //
+
+  function checkAndRedirect() {
+
+    for (var i = 0; i < basicPatterns.length; i++) {
+      if (basicPatterns[i].test(window.location.href)) {
+        redirect();
+        break;
+      }
+    }
+
+    for (var i = 0; i < fullPatterns.length; i++) {
+      var day = fullPatterns[i][0];
+      var fromTime = fullPatterns[i][1];
+      var toTime = fullPatterns[i][2];
+      var urlRegex = fullPatterns[i][3];
+      var redirectLocation = fullPatterns[i][4];
+      var href = window.location.href;
+
+      if (dayMatches(day) && timeInRange(fromTime, toTime) && urlRegex.test(href)) {
+        redirect(redirectLocation);
+        break;
+      }
+    }
+
+    for (var i = 0; i < timeoutPatterns.length; i++) {
+      var urlRegex = timeoutPatterns[i][0];
+      var href = window.location.href;
+
+      if (urlRegex.test(href)) {
+
+        var accessTime = timeoutPatterns[i][1];
+        var blockTime = timeoutPatterns[i][2];
+        var unblockEnd = new Date(timeoutPatterns[i][3]);
+
+        activateTimeoutBlocker(accessTime, blockTime, unblockEnd);
+        break;
+      }
+    }
+  }
+
+  function checkRegularly() {
+    checkAndRedirect();
+    setTimeout(checkRegularly, checkFrequency*60*1000);
+  }
+
+  // ========================================================================== //
+  // Init
+  // ========================================================================== //
+
+  // first load all the settings
+  // then regularly check to see if this page should be blocked.
+  loadOptions(checkRegularly);
 
 }());

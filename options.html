@@ -80,6 +80,28 @@
 ">
   </textarea>
 
+  <h2>Timeout Patterns</h2>
+
+  <p>
+    This is the list of url regular expressions that you want to limit your
+    usage by time. When you visit the page you will be given 10mins access and
+    then blocked for a further 10mins after that - this is to stop you getting
+    so distracted that you spend ages on the site, but still recognising that
+    it's a valuable place to spend short periods on.
+  </p>
+
+  <p>
+    for example: <code>youtube.\.com</code> will let you use youtube for 10mins
+    with a 10min cool-off period.. <code>youtube.com 10 30</code> ups the
+    cool off period to 30 mins while keeping the access time to 10 mins.
+  </p>
+
+  <textarea wrap='off' name="timeoutPatterns" rows="8" cols="70" id="timeoutPatterns" style="
+      font-family: monospace;
+      font-size: large;
+  ">
+  </textarea>
+  
   <h2>Check Frequency</h2>
 
   <div>How often to check for blocked or redirected pages in mins.</div>

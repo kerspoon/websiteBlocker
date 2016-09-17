@@ -4,11 +4,13 @@ function save_options() {
 
   var basicPatterns = document.getElementById('basicPatterns').value;
   var fullPatterns = document.getElementById('fullPatterns').value;
+  var timeoutPatterns = document.getElementById('timeoutPatterns').value;
   var frequency = document.getElementById('frequency').value;
 
   chrome.storage.sync.set({
     basicPatterns: basicPatterns,
     fullPatterns: fullPatterns,
+    timeoutPatterns: timeoutPatterns,
     frequency: frequency
   }, function() {
     // Update status to let user know options were saved.
@@ -27,10 +29,12 @@ function restore_options() {
   chrome.storage.sync.get({
     basicPatterns: 'dailymail\\.co\nexpress\\.co',
     fullPatterns: '',
+    timeoutPatterns: '',
     frequency: '5'
   }, function(items) {
     document.getElementById('basicPatterns').value = items.basicPatterns;
     document.getElementById('fullPatterns').value = items.fullPatterns;
+    document.getElementById('timeoutPatterns').value = items.timeoutPatterns;
     document.getElementById('frequency').value = items.frequency;
   });
 }
