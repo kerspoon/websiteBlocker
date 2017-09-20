@@ -10,6 +10,17 @@
   var defaultCheckFrequency = 5; // every 5 mins
 
   var checkFrequency, basicPatterns, fullPatterns, timeoutPatterns;
+  var debugMode = true;
+
+  // ========================================================================== //
+  // Logging
+  // ========================================================================== //
+
+  function log(msg) {
+    if(debugMode) {
+      console.log("PLUGIN-URL-REDIRECT " + ([].slice.call(arguments)).join(" "));
+    }
+  }
 
   // ========================================================================== //
   // Redirect (by calling `bg.js`)
@@ -17,7 +28,7 @@
 
   function redirect(to) {
     to = to ? to : 'about:blank';
-    // console.log('redirect', window.location.href, to);
+    log('redirect', window.location.href, to);
     chrome.extension.sendRequest({
       redirect: to
     }); // send message to redirect
@@ -151,7 +162,8 @@
       basicPatterns: basicPatterns,
       fullPatterns: fullPatterns,
       timeoutPatterns: timeoutPatterns,
-      checkFrequency: parseFloat(items.checkFrequency)
+      checkFrequency: parseFloat(items.checkFrequency),
+      debugMode: !!debugMode
     };
   }
 
@@ -175,6 +187,7 @@
 
   function saveOptions(callback) {
     var optionsStr = unparseSettings(basicPatterns, fullPatterns, timeoutPatterns, checkFrequency);
+    log("saveOptions", JSON.stringify(optionsStr));
     chrome.storage.sync.set(optionsStr, callback);
   }
 
@@ -183,14 +196,17 @@
       basicPatterns: '',
       fullPatterns: '',
       timeoutPatterns: '',
-      checkFrequency: defaultCheckFrequency
+      checkFrequency: defaultCheckFrequency,
+      debugMode: false
     }, function(items) {
       var settings = parseSettings(items);
+      log("loadOptions", JSON.stringify(settings));
 
       checkFrequency = settings.checkFrequency;
       basicPatterns = settings.basicPatterns;
       timeoutPatterns = settings.timeoutPatterns;
       fullPatterns = settings.fullPatterns;
+      debugMode = settings.debugMode;
 
       callback();
     });
@@ -200,13 +216,8 @@
   // Timeout blocker
   // ========================================================================== //
 
-  function removePageBlocker() {
-    var div = document.getElementById('PLUGIN-URL-REDIRECT');
-    if (div) div.remove();
-  }
-
   function unblockPage() {
-    // console.log('unblock button pressed');
+    log('unblock button pressed');
 
     // update the setting to set the unblock/block time
     for (var i = 0; i < timeoutPatterns.length; i++) {
@@ -216,7 +227,7 @@
     }
 
     // kill the page blocker
-    removePageBlocker();
+    Location.reload();
 
     // save the new kill time so that it gets remembered if we close the page
     saveOptions();
@@ -224,13 +235,13 @@
 
   function createPageOverlay(accessTime, blockTime, unblockEnd) {
 
-    // console.log('create overlay');
+    log('create overlay');
 
     var div = document.getElementById('PLUGIN-URL-REDIRECT');
 
     if (!div) {
 
-      // console.log('make the div');
+      log('make the div');
 
       div = document.createElement("div");
       div.id = "PLUGIN-URL-REDIRECT";
@@ -246,8 +257,8 @@
       var lockedUntil = new Date(unblockEnd.getTime() + blockTime*1000*60);
       var now = new Date();
 
-      // console.log('in cooldown period?', now < lockedUntil);
-      // console.log(now.getTime(), lockedUntil.getTime());
+      log('in cooldown period?', now < lockedUntil);
+      log(now.getTime(), lockedUntil.getTime());
 
       if (now < lockedUntil) {
         var child = document.createElement("h1");
@@ -269,6 +280,8 @@
       msg.innerText = "Blocked settings. Access: " + accessTime + ". Cooldown: " + blockTime;
       div.appendChild(msg);
 
+      // replace entire page with the div
+      document.body.innerHTML = '';
       document.body.appendChild(div);
     }
     return div;
@@ -278,8 +291,8 @@
 
     var now = new Date();
 
-    // console.log('in open-access period?', unblockEnd && now < unblockEnd);
-    // console.log(now.getTime(), unblockEnd.getTime());
+    log('in open-access period?', unblockEnd && now < unblockEnd);
+    log(now.getTime(), unblockEnd.getTime());
 
     if (unblockEnd && now < unblockEnd) {
       // we have previously clicked the unblock button
@@ -300,6 +313,8 @@
   // ========================================================================== //
 
   function checkAndRedirect() {
+
+    log("checkAndRedirect");
 
     for (var i = 0; i < basicPatterns.length; i++) {
       if (basicPatterns[i].test(window.location.href)) {
