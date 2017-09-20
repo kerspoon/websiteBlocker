@@ -28,7 +28,6 @@
 
   function redirect(to) {
     to = to ? to : 'about:blank';
-    log('redirect', window.location.href, to);
     chrome.extension.sendRequest({
       redirect: to
     }); // send message to redirect
@@ -138,24 +137,34 @@
     var fullLines = items.fullPatterns.split("\n");
     for (var i = 0; i < fullLines.length; i++) {
       // worknight 23:20 24:00 reddit\\.com
-      var lineParts = fullLines[i].trim().split(" ");
-      if (lineParts.length > 3) {
+      var trimmedLine = fullLines[i].trim();
+      if(!trimmedLine) { continue; } // skip empty lines
+      var lineParts = trimmedLine.split(" ");
+      if (lineParts.length >= 4) {
         lineParts[3] = new RegExp(lineParts[3]);
         fullPatterns.push(lineParts);
+      } else {
+        log("expected 4 or 5 arguments in fullLine got", lineParts.length);
       }
     }
 
     var timeoutPatterns = [];
     var timeoutLines = items.timeoutPatterns.split("\n");
     for (var i = 0; i < timeoutLines.length; i++) {
-      // reddit.com 20 40 1474065141460
-      var lineParts = timeoutLines[i].trim().split(" ");
-      timeoutPatterns.push([
-        new RegExp(lineParts[0]),
-        parseFloat(lineParts[1]),
-        parseFloat(lineParts[2]),
-        parseInt(lineParts[3], 0)
-      ]);
+      var trimmedLine = timeoutLines[i].trim();
+      if(!trimmedLine) { continue; } // skip empty lines
+      var lineParts = trimmedLine.split(" ");
+      if (lineParts.length >= 3) {
+        // reddit.com 20 40 1474065141460
+        timeoutPatterns.push([
+          new RegExp(lineParts[0]),
+          parseFloat(lineParts[1]),
+          parseFloat(lineParts[2]),
+          parseInt(lineParts[3], 0)
+        ]);
+      } else {
+        log("expected 3 or 4 arguments in timeoutLine got", lineParts.length);
+      }
     }
 
     return {
@@ -199,8 +208,8 @@
       checkFrequency: defaultCheckFrequency,
       debugMode: false
     }, function(items) {
+      log("loadOptions", JSON.stringify(items));
       var settings = parseSettings(items);
-      log("loadOptions", JSON.stringify(settings));
 
       checkFrequency = settings.checkFrequency;
       basicPatterns = settings.basicPatterns;
@@ -217,7 +226,29 @@
   // ========================================================================== //
 
   function unblockPage() {
-    log('unblock button pressed');
+
+    var openAccess = inOpenAccessPeriod();
+    var cooldown = inCooldownPeriod();
+
+    log('unblock button pressed', openAccess, cooldown);
+
+    if (openAccess) {
+      // dont let people unblock here, they shouldn't be able to anyway.
+      // regardless it just adds more time when it should be blocking
+      log('not unblocking as in openAccess');
+      // reload the page to show the correct data.
+      location.reload();
+      return;
+    }
+
+    if (cooldown) {
+      // we should still be blocked. don't let them unblock
+      // it must have been unblocked from another page, while this was open
+      log('not unblocking as in cooldown');
+      // reload the page to show the correct data.
+      location.reload();
+      return;
+    }
 
     // update the setting to set the unblock/block time
     for (var i = 0; i < timeoutPatterns.length; i++) {
@@ -226,11 +257,18 @@
       }
     }
 
-    // kill the page blocker
-    Location.reload();
+    // kill the page blocker, by realoding the page
+    location.reload();
 
     // save the new kill time so that it gets remembered if we close the page
     saveOptions();
+  }
+
+  function inCooldownPeriod(blockTime) {
+    var lockedUntil = new Date(unblockEnd.getTime() + blockTime*1000*60);
+    var now = new Date();
+    log('in cooldown period?', now < lockedUntil, "(", now.getTime(), lockedUntil.getTime(), ")");
+    return now < lockedUntil;
   }
 
   function createPageOverlay(accessTime, blockTime, unblockEnd) {
@@ -254,13 +292,7 @@
       div.style.left = 0;
       div.style["text-align"] = "center";
 
-      var lockedUntil = new Date(unblockEnd.getTime() + blockTime*1000*60);
-      var now = new Date();
-
-      log('in cooldown period?', now < lockedUntil);
-      log(now.getTime(), lockedUntil.getTime());
-
-      if (now < lockedUntil) {
+      if (inCooldownPeriod()) {
         var child = document.createElement("h1");
         child.innerText = "Blocked until " + lockedUntil;
         div.appendChild(child);
@@ -281,20 +313,27 @@
       div.appendChild(msg);
 
       // replace entire page with the div
+      var elements = document.querySelectorAll('style, link[rel=stylesheet]');
+      for(var i=0;i<elements.length;i++){
+        elements[i].parentNode.removeChild(elements[i]);
+      }
       document.body.innerHTML = '';
       document.body.appendChild(div);
     }
     return div;
   }
 
+  function inOpenAccessPeriod(unblockEnd) {
+    var now = new Date();
+    log('in open-access period?', unblockEnd && now < unblockEnd, "(", now.getTime(), unblockEnd.getTime(), ")");
+    return unblockEnd && now < unblockEnd;
+  }
+
   function activateTimeoutBlocker(accessTime, blockTime, unblockEnd) {
 
-    var now = new Date();
+    log("activateTimeoutBlocker", accessTime, blockTime, unblockEnd);
 
-    log('in open-access period?', unblockEnd && now < unblockEnd);
-    log(now.getTime(), unblockEnd.getTime());
-
-    if (unblockEnd && now < unblockEnd) {
+    if (inOpenAccessPeriod(unblockEnd)) {
       // we have previously clicked the unblock button
       // and the timer set by that button has not expired
       // hence we should just let them view the page
@@ -318,6 +357,7 @@
 
     for (var i = 0; i < basicPatterns.length; i++) {
       if (basicPatterns[i].test(window.location.href)) {
+        log("redirect basicPattern", basicPatterns[i], "about:blank");
         redirect();
         break;
       }
@@ -332,6 +372,7 @@
       var href = window.location.href;
 
       if (dayMatches(day) && timeInRange(fromTime, toTime) && urlRegex.test(href)) {
+        log("redirect fullPattern", urlRegex, redirectLocation || "about:blank");
         redirect(redirectLocation);
         break;
       }
