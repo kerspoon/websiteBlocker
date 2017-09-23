@@ -89,16 +89,16 @@
   function checkTime (h,m,a,b,c,d){
     // http://stackoverflow.com/questions/9081220
     if (a > c || ((a == c) && (b > d))) {
-        console.log('not a valid input', a, b, c, d);
+        log('not a valid input', a, b, c, d);
     } else {
          if (h > a && h < c) {
-              return true;
+            return true;
          } else if (h == a && m >= b) {
-             return true;
+            return true;
          } else if (h == c && m <= d) {
-             return true;
+            return true;
          } else {
-              return false;
+            return false;
          }
     }
   }
@@ -172,7 +172,7 @@
       fullPatterns: fullPatterns,
       timeoutPatterns: timeoutPatterns,
       checkFrequency: parseFloat(items.checkFrequency),
-      debugMode: !!debugMode
+      debugMode: items.debugMode
     };
   }
 
@@ -225,61 +225,90 @@
   // Timeout blocker
   // ========================================================================== //
 
-  function unblockPage() {
-
-    var openAccess = inOpenAccessPeriod();
-    var cooldown = inCooldownPeriod();
-
-    log('unblock button pressed', openAccess, cooldown);
-
-    if (openAccess) {
-      // dont let people unblock here, they shouldn't be able to anyway.
-      // regardless it just adds more time when it should be blocking
-      log('not unblocking as in openAccess');
-      // reload the page to show the correct data.
-      location.reload();
-      return;
-    }
-
-    if (cooldown) {
-      // we should still be blocked. don't let them unblock
-      // it must have been unblocked from another page, while this was open
-      log('not unblocking as in cooldown');
-      // reload the page to show the correct data.
-      location.reload();
-      return;
-    }
-
-    // update the setting to set the unblock/block time
+  function getTimeoutPatternData() {
     for (var i = 0; i < timeoutPatterns.length; i++) {
-      if (timeoutPatterns[i][0].test(window.location.href)) {
-        timeoutPatterns[i][3] = (new Date()).getTime() + 1000*60*timeoutPatterns[i][1];
+      var urlRegex = timeoutPatterns[i][0];
+      var href = window.location.href;
+      if (urlRegex.test(href)) {
+        var accessDuration = timeoutPatterns[i][1];
+        var blockDuration = timeoutPatterns[i][2];
+        var unblockEnd = new Date(timeoutPatterns[i][3]);
+        var state, lockedUntil;
+
+        if (!timeoutPatterns[i][3]) {
+          // we have never pressed the unblock button hence we show the button.
+          state = 'locked';
+          lockedUntil = false;
+        } else {
+          var now = new Date();
+          lockedUntil = new Date(unblockEnd.getTime() + blockDuration*1000*60);
+
+          if (now < unblockEnd) {
+           // we have previously clicked the "unblock" button and the time set by
+           // that has not yet elapsed. Hence we should allow the user to view
+           // the page as normal.
+           state = 'unlocked'
+         } else if (now > lockedUntil) {
+             // the "cooldown" time has expired, we are no longer sealed. Or we
+             // have never clicked the "unblock" button. Either way that is what we
+             // need to show.
+             state = 'locked';
+          } else {
+            // we have set a lock that is still active, don't show the lock button
+            // dont allow it to be pressed. Just clear the page and let the user
+            // know when it will unlock.
+            state = 'sealed';
+          }
+        }
+
+        log("timeoutPattern match", urlRegex, state, accessDuration, blockDuration, unblockEnd, lockedUntil);
+
+        return {
+          accessDuration: accessDuration,
+          blockDuration: blockDuration,
+          unblockEnd: unblockEnd,
+          lockedUntil: lockedUntil,
+          state: state,
+          id: i
+        };
       }
     }
-
-    // kill the page blocker, by realoding the page
-    location.reload();
-
-    // save the new kill time so that it gets remembered if we close the page
-    saveOptions();
+    return false;
   }
 
-  function inCooldownPeriod(blockTime) {
-    var lockedUntil = new Date(unblockEnd.getTime() + blockTime*1000*60);
-    var now = new Date();
-    log('in cooldown period?', now < lockedUntil, "(", now.getTime(), lockedUntil.getTime(), ")");
-    return now < lockedUntil;
+  function unblockPage() {
+
+    log('unblock button pressed');
+
+    // we need to double check the timeouts as they might have been set by
+    // another tab that is on the same page
+    loadOptions(function () {
+      data = getTimeoutPatternData();
+
+      if (data.state == 'locked') {
+        log('unblock button pressed, unblock permitted');
+        // update the setting to set the unblock/block time
+        timeoutPatterns[data.id][3] = (new Date()).getTime() + 1000*60*data.accessDuration;
+
+        // save the new kill time so that it gets remembered if we close the page
+        // then kill the page blocker, by reloading the page
+        saveOptions(function () { location.reload();});
+      } else {
+        // someone must have done something on another page.
+        // reload the page to show the correct data.
+        log('unblock button pressed, not unblocking, wrong state', data.state);
+        location.reload();
+      }
+    });
   }
 
-  function createPageOverlay(accessTime, blockTime, unblockEnd) {
+  function createPageOverlay(data) {
 
     log('create overlay');
 
     var div = document.getElementById('PLUGIN-URL-REDIRECT');
 
     if (!div) {
-
-      log('make the div');
 
       div = document.createElement("div");
       div.id = "PLUGIN-URL-REDIRECT";
@@ -292,9 +321,10 @@
       div.style.left = 0;
       div.style["text-align"] = "center";
 
-      if (inCooldownPeriod()) {
+      if (data.state == "sealed") {
+        // we are in the "cooldown" peroid, don't show the unblock button
         var child = document.createElement("h1");
-        child.innerText = "Blocked until " + lockedUntil;
+        child.innerText = "Blocked until " + data.lockedUntil;
         div.appendChild(child);
       } else {
         var child = document.createElement("button");
@@ -309,10 +339,10 @@
       }
 
       var msg = document.createElement("h2");
-      msg.innerText = "Blocked settings. Access: " + accessTime + ". Cooldown: " + blockTime;
+      msg.innerText = "Blocked settings. Access: " + data.accessDuration + ". Cooldown: " + data.blockDuration;
       div.appendChild(msg);
 
-      // replace entire page with the div
+      // replace entire page with the new div, clear all stylesheets
       var elements = document.querySelectorAll('style, link[rel=stylesheet]');
       for(var i=0;i<elements.length;i++){
         elements[i].parentNode.removeChild(elements[i]);
@@ -323,29 +353,6 @@
     return div;
   }
 
-  function inOpenAccessPeriod(unblockEnd) {
-    var now = new Date();
-    log('in open-access period?', unblockEnd && now < unblockEnd, "(", now.getTime(), unblockEnd.getTime(), ")");
-    return unblockEnd && now < unblockEnd;
-  }
-
-  function activateTimeoutBlocker(accessTime, blockTime, unblockEnd) {
-
-    log("activateTimeoutBlocker", accessTime, blockTime, unblockEnd);
-
-    if (inOpenAccessPeriod(unblockEnd)) {
-      // we have previously clicked the unblock button
-      // and the timer set by that button has not expired
-      // hence we should just let them view the page
-      return;
-    } else {
-      // show a full page overlay with a button to unblock
-      // but we have to wait for the page to load first
-      callWhenPageReady(function() {
-        createPageOverlay(accessTime, blockTime, unblockEnd);
-      });
-    }
-  }
 
   // ========================================================================== //
   // Test if the current page needs blocking
@@ -378,19 +385,16 @@
       }
     }
 
-    for (var i = 0; i < timeoutPatterns.length; i++) {
-      var urlRegex = timeoutPatterns[i][0];
-      var href = window.location.href;
-
-      if (urlRegex.test(href)) {
-
-        var accessTime = timeoutPatterns[i][1];
-        var blockTime = timeoutPatterns[i][2];
-        var unblockEnd = new Date(timeoutPatterns[i][3]);
-
-        activateTimeoutBlocker(accessTime, blockTime, unblockEnd);
-        break;
-      }
+    data = getTimeoutPatternData();
+    if (!data || data.state == "unlocked") {
+      // we either have a page that is not in the block list or
+      // we have unlocked the page, either way show as normal
+      return;
+    } else {
+      // show either the locked page or the unlock button.
+      callWhenPageReady(function() {
+        createPageOverlay(data);
+      });
     }
   }
 
