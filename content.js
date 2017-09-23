@@ -38,10 +38,10 @@
   // ========================================================================== //
 
   function callWhenPageReady(callback) {
-    if (document.readyState === "complete") {
-      setTimeout(callback, 0);
-    } else {
+    if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", callback);
+    } else {
+      setTimeout(callback, 0);
     }
   }
 
