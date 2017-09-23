@@ -10,7 +10,7 @@
   var defaultCheckFrequency = 5; // every 5 mins
 
   var checkFrequency, basicPatterns, fullPatterns, timeoutPatterns;
-  var debugMode = true;
+  var debugMode = false;
 
   // ========================================================================== //
   // Logging
